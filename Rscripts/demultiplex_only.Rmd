@@ -1,0 +1,344 @@
+---
+title: "Seurat analysis report of BD Rhapsody TAS-Seq WTA data"
+date: "`r Sys.Date()`"
+author: "ImmunoGeneTeqs Inc."
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    self_contained: true
+    thumbnails: false
+    lightbox: false
+    gallery: false
+    mathjax: false
+    toc_depth: 2  #type-of-column header specification 
+    md_extensions: -ascii_identifiers
+params:
+  cDNA_matrix: cDNA_matrix
+  Tag_matrix: Tag_matrix
+  nTags: nTags
+  threads: threads
+  DBEC_output: DBEC_output
+  species: species
+  min.ave: min.ave
+  min.diff: min.diff
+  SeqGeq_output: SeqGeq_output
+
+---
+
+```{r setup, echo=FALSE, cache=FALSE, message=FALSE, warning=FALSE}
+setwd("../")
+suppressWarnings(suppressMessages(source("./Rscripts/library_source_Seurat.R")))
+suppressMessages(library(knitr))
+suppressMessages(library(rmdformats))
+suppressMessages(library(stringr))
+suppressMessages(library(DT))
+suppressMessages(library(cluster))
+suppressMessages(library(parallelDist))
+suppressMessages(library(fastSave))
+
+
+quiet <- function(x) { 
+  sink(tempfile()) 
+  on.exit(sink()) 
+  invisible(force(x)) 
+} 
+
+tableread_fast_hashtag = function(x, sep="\t", header=TRUE){
+  tmp = data.table::fread(x, header=header, sep=sep, quote="")
+  tmp = as.data.frame(tmp)
+  return(tmp)
+}
+
+custom_colors <- list()
+colors_dutch <- c(
+  '#FFC312','#C4E538','#12CBC4','#FDA7DF','#ED4C67',
+  '#F79F1F','#A3CB38','#1289A7','#D980FA','#B53471',
+  '#EE5A24','#009432','#0652DD','#9980FA','#833471',
+  '#EA2027','#006266','#1B1464','#5758BB','#6F1E51'
+)
+colors_spanish <- c(
+  '#40407a','#706fd3','#f7f1e3','#34ace0','#33d9b2',
+  '#2c2c54','#474787','#aaa69d','#227093','#218c74',
+  '#ff5252','#ff793f','#d1ccc0','#ffb142','#ffda79',
+  '#b33939','#cd6133','#84817a','#cc8e35','#ccae62'
+)
+colors_custom = c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c',
+                      '#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928',
+                      '#49beaa', '#611c35', '#2708a0')
+custom_colors$discrete <- unique(c(colors_dutch, colors_spanish, colors_custom))
+
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+	             cache=FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               fig.align='center')
+opts_knit$set(width=50)
+
+cDNA_matrix = params$cDNA_matrix
+Tag_matrix = params$Tag_matrix
+nTags = as.numeric(params$nTags)
+threads = as.numeric(params$threads)
+DBEC_output = as.logical(params$DBEC_output)
+species = params$species
+min.ave = as.numeric(params$min.ave)
+min.diff = as.numeric(params$min.diff)
+SeqGeq_output = as.logical(params$SeqGeq_output)
+sample_name = gsub("matrix_inflection_", "", cDNA_matrix)
+sample_name = gsub(".txt.gz", "", sample_name)
+
+poisson_notEmpty = 1-dpois(0, lambda=20000/200000)
+poisson_singlet = dpois(1, lambda=20000/200000)
+pct.doublet = 1-poisson_singlet/poisson_notEmpty
+pct.doublet.detectable = pct.doublet*(choose(nTags+2-1, 2)-nTags)/choose(nTags+2-1, 2)
+
+#create output folders
+#make output directories
+dir.name = sprintf("./result/%s_results/", sample_name)
+dir.name.1 = paste(dir.name, "Seurat", sep="")
+if(!dir.exists(dir.name.1)){
+dir.create(dir.name.1)
+}
+
+dir.name.plot = paste("./result/", sample_name, "_results/plots/", sep="")
+dir.name.matrix = paste("./result/", sample_name, "_results/matrix/", sep="")
+dir.name.plot1 = paste("./result/", sample_name, "_results/Seurat/Seurat_plots/", sep="")
+
+if(!dir.exists(dir.name.plot)){
+dir.create(dir.name.plot)
+}
+
+if(!dir.exists(dir.name.plot1)){
+dir.create(dir.name.plot1)
+}
+
+if(species== "macaca"){
+  species = "hsa"
+}
+
+
+```
+
+## Brief summary of the demultiplexing procedures
+
+For assignment of each tags to each cell barcodes, read counts of each tag in each valid cell barcode, which defined by the cDNA matrix, were extracted from tag/cell barcode expression matrix. Unassigned  cell barcodes were labeled as "not-detected" cells. Then, sum of the total read counts of each tags were normalized to the minimum sum count of each tags, and log2 fold-change between first most tag counts and second most tag counts within each cell barcode. Each cell barcode were ranked by the fold-change ascending order, and top `r paste(round(pct.doublet.detectable*100, digits=2), "% cells", sep="")` were identified as doublets, which were theoretically detectable doublets calculated by the Poisson's distribution based on the number of loaded cells, total Rhapsody well number, and number of tags used.
+
+Finally, remained cell barcodes were assigned to the first most counted tags. Each tag expression in each cell barcode were log2(x+1)-transformed, z-scaled by each cell barcode, and visualized by using pheatmap package in R 3.6.3.  
+
+
+```{r analysis_demultiplex, echo=FALSE, cache=FALSE, message=FALSE}
+
+#create output folders
+setwd("../") #must set working directory. default is .Rmd-existing path.
+
+
+#load gene expression matrix
+tablelist = lapply(paste("./result/", sample_name, 
+                         "_results/matrix/", cDNA_matrix, sep=""), 
+                   tableread_fast_sparse)
+names(tablelist)=sample_name
+
+#load hashtag-expression matrix
+hashtag_fnames1 = gsub("Hashtag_top1M_", "", Tag_matrix)
+hashtag_fnames1 = gsub(".txt.gz", "", hashtag_fnames1)
+hashtag_data=lapply(paste("./result/", hashtag_fnames1, "_results/matrix/", Tag_matrix, sep=""), tableread_fast_hashtag)
+hashtag_data[[1]][,1] = paste(names(tablelist)[1], hashtag_data[[1]][,1], sep='_')
+quiet(gc())
+
+
+##create Seurat object (Seurat v2 workflow) and annotate by hashtag
+colnames(tablelist[[1]]) = paste(names(tablelist)[1], colnames(tablelist[[1]]), sep='_')
+seu = lapply(tablelist, CreateSeuratObject, min.cells = 5, min.genes = 200)
+
+dir.name.plot = paste("./result/", sample_name, "_results/plots/", sep="")
+dir.name.matrix = paste("./result/", sample_name, "_results/matrix/", sep="")
+dir.name.plot1 = paste("./result/", sample_name, "_results/Seurat/Seurat_plots/", sep="")
+
+#Add hashtag annotation metadata
+seu = Demultiplex_DNAtags(hashtag_data[[1]], seu[[1]],
+                          scale.factor = max(colSums(hashtag_data[[1]][,2:ncol(hashtag_data[[1]])])),
+                                 nTags=nTags, nCells_in_cartridge=nrow(seu[[1]]@meta.data), 
+                                 sample.name=sample_name[[1]],
+                                 dir.name=dir.name.plot)
+hoge = paste(dir.name.plot, sample_name, "_demultiplex.txt", sep="")
+quiet(file.remove(hoge))
+
+#add hashtag ID to cell_barcodes and export expression matrix 
+raw.data = seu[[1]]@raw.data
+tmp = paste(seu[[1]]@meta.data$TagIDs, rownames(seu[[1]]@meta.data), sep="_")
+colnames(raw.data)=tmp
+raw.data=as.matrix(raw.data)
+file.name.raw = sprintf("matrix_inflection_demulti_%s.txt.gz", sample_name)
+file.name.raw = paste(dir.name.matrix, file.name.raw, sep="")
+fwrite(as.data.frame(raw.data), file.name.raw, row.names=T, col.names=T, sep="\t", 
+       eol="\n", quote=F, nThread=threads, compress="gzip")
+
+tmp = table(seu[[1]]@meta.data$TagIDs)
+tmp = as.data.frame(tmp)
+rownames(tmp)=tmp[,1]
+logs_Ncells = as.data.frame(t(tmp))
+logs_Ncells = logs_Ncells[2,,drop=F]
+rownames(logs_Ncells)="cell number"
+
+#add normalized hashtag exporession data to gene_expression matrix for SeqGeq software
+if(SeqGeq_output){
+hashtag_expression_data = seu[[1]]@meta.data[,5:(nTags+4)]
+rownames(hashtag_expression_data)=colnames(raw.data)
+raw.data1 = rbind(raw.data, t(2^hashtag_expression_data))
+file.name = sprintf("matrix_demulti_SeqGeq_%s.txt.gz", sample_name) 
+file.name = paste(dir.name.matrix, file.name, sep="")
+fwrite(as.data.frame(raw.data1), file.name, row.names=T, col.names=T, sep="\t", 
+       eol="\n", quote=F, nThread=threads, compress="gzip")
+}
+
+```
+
+---
+
+Figure 2: Heatmap representation of tag expression and assignment in each cell barcodes
+
+```{r output_demultiplex_plots, echo=FALSE, cache=FALSE, fig.width=8, fig.height=4, dpi=300, out.width = 800, out.height = 400, message=FALSE, fig.align='center'}
+plot_grid(seu[[2]])
+
+```
+
+```{r output_table1, echo=FALSE, cache=FALSE,dpi=300, out.width = 1000, out.height = 500, fig.align='center'}
+DT::datatable(logs_Ncells, filter="none", width='100%',
+          caption = 'Table 1: Number of cells assigned to each Tags', 
+          class = 'cell-border stripe', 
+          options = list(pageLength=1, searching=FALSE, lengthChange=FALSE, autoWidth = TRUE, scrollX=F)) %>%
+   DT::formatStyle(columns = c(1:ncol(logs_Ncells)), fontSize = 8)
+```
+
+File locations  
+
+Demultiplexed plot was stored at `r paste(dir.name.plot, sprintf("%s_demultiplex.png", sample_name), sep="")`.
+Demultiplexed expression matrix was stored at `r paste(dir.name.matrix, sprintf("matrix_inflection_demulti_%s.txt.gz", sample_name), sep="")`.
+`r if(SeqGeq_output){paste("Demultiplexed expression matrix for SeqGeq analysis was stored at ", dir.name.matrix, sprintf("matrix_demulti_SeqGeq_%s.txt.gz", sample_name), sep="")}`
+
+---
+
+`r if(DBEC_output){"Perform DBEC correction (mRNA leak-derived backgroud subtraction of gene expression)"}`
+`r if(DBEC_output){paste("For DBEC correction, genes of which log2(x+1)-transformed maximum expression over 8 were selected, and biexponential transformation was performed by using FlowTrans package in R 3.6.3. Next, normal mixture components (model E) was detected by using mclust package in R 3.6.3, average expression of each components was calculated, and genes of which the maximum average expression over ", min.ave, " were selected for background subtration. Then, if the components of which difference of the maximum average expression against maximal average expression under ", min.diff, " were detected, the expression value of the components set as 0 for background subtracion.", sep="")}`
+
+
+```{r analysis_DBEC, echo=FALSE, cache=FALSE, eval = DBEC_output}
+
+setwd("../") #must set working directory. default is .Rmd-existing path.
+message("Performing DBEC-correction... This may take some time.")
+
+ DBEC_filter = background_subtraction_Biex(tablelist, min.event=100, minimum.max.expr=8,
+                                          species=species, min.ave=min.ave, AutoThreshold = FALSE,
+                                          min.diff=min.diff, modelnames="E",
+                                          uncert.thre=1, nthreads=threads, sample.name=sample_name,
+                                          dir.name=dir.name.plot)
+ names(DBEC_filter) = sample_name
+ DBEC_res = apply_DBEC_filter(tablelist, DBEC_filter=DBEC_filter, nthreads=threads, sample.name = sample_name)
+ names(DBEC_res) = sample_name
+
+ ##create Seurat object (Seurat v2 workflow) and annotate by hashtag
+ seu = lapply(DBEC_res, CreateSeuratObject, min.cells = 5, min.genes = 200)
+
+ #Add hashtag annotation metadata
+ seu = Demultiplex_DNAtags(hashtag_data[[1]], seu[[1]],
+                           scale.factor = max(colSums(hashtag_data[[1]][,2:ncol(hashtag_data[[1]])])),
+                               nTags=nTags, nCells_in_cartridge=nrow(seu[[1]]@meta.data), 
+                               sample.name=sample_name[[1]],
+                               dir.name=dir.name.plot)
+ hoge = paste(dir.name.plot, sample_name, "_demultiplex.txt", sep="")
+ quiet(file.remove(hoge))
+
+ #add hashtag ID to cell_barcodes and export expression matrix 
+raw.data = seu[[1]]@raw.data
+tmp = paste(seu[[1]]@meta.data$TagIDs, rownames(seu[[1]]@meta.data), sep="_")
+colnames(raw.data)=tmp
+colnames(raw.data)=gsub("not_detected", "not-detected", colnames(raw.data))
+raw.data=as.matrix(raw.data)
+file.name.raw = sprintf("matrix_inflection_demulti_DBEC_%s.txt.gz", sample_name)
+file.name.raw = paste(dir.name.matrix, file.name.raw, sep="")
+fwrite(as.data.frame(raw.data), file.name.raw, row.names=T, col.names=T, sep="\t", 
+       eol="\n", quote=F, nThread=threads, compress="gzip")
+
+ tmp = table(seu[[1]]@meta.data$TagIDs)
+ tmp = as.data.frame(tmp)
+ rownames(tmp)=tmp[,1]
+ logs_Ncells = as.data.frame(t(tmp))
+ logs_Ncells = logs_Ncells[2,,drop=F]
+ rownames(logs_Ncells)="cell number"
+
+ 
+ #add normalized hashtag exporession data to gene_expression matrix for SeqGeq software
+ if(SeqGeq_output){
+ hashtag_expression_data = seu[[1]]@meta.data[,5:(nTags+4)]
+ rownames(hashtag_expression_data)=colnames(raw.data)
+ raw.data1 = rbind(raw.data, t(2^hashtag_expression_data))
+ file.name = sprintf("matrix_inflection_demulti_DBEC_SeqGeq_%s.txt.gz", sample_name)
+ file.name = paste(dir.name.matrix, file.name, sep="") 
+ fwrite(as.data.frame(raw.data1), file.name, row.names=T, col.names=T, sep="\t", 
+       eol="\n", quote=F, nThread=threads, compress="gzip")
+ }
+ 
+
+```
+
+`r if(DBEC_output){paste("File locations", sep="")}`  
+`r if(DBEC_output){paste("DBEC threshold plots were stored at ", dir.name.plot, sprintf("DBEC_thresholds_%s", sample_name), sep="")}`
+`r if(DBEC_output){paste("Demultiplexed/DBEC-corrected expression matrix was stored at ", dir.name.matrix, sprintf("matrix_inflection_demulti_DBEC_%s.txt.gz", sample_name), sep="")}`  
+`r if(DBEC_output && SeqGeq_output){paste("Demultiplexed/DBEC-corrected expression matrix for SeqGeq analysis was stored at ", dir.name.matrix, sprintf("matrix_inflection_demulti_DBEC_SeqGeq_%s.txt.gz", sample_name), sep="")}`  
+`r if(DBEC_output){paste("Figure 2: Heatmap representation of tag expression and assignment in each cell barcodes (after DBEC correction)", sep="")}`
+
+
+```{r output_demultiplex_plots2, echo=FALSE, cache=FALSE, eval = DBEC_output, fig.width=8, fig.height=4, dpi=300, out.width = 800, out.height = 400, message=FALSE, fig.align='center'}
+plot_grid(seu[[2]])
+
+```
+
+
+```{r output_table2, echo=FALSE, cache=FALSE, eval = DBEC_output, dpi=300, out.width = 1000, out.height = 500, fig.align='center'}
+DT::datatable(logs_Ncells, filter="none", width='100%',
+          caption = 'Table 1: Number of cells assigned to each Tags (DBEC-corrected matrix)', 
+          class = 'cell-border stripe', 
+          options = list(pageLength=1, searching=FALSE, lengthChange=FALSE, autoWidth = TRUE, scrollX=F)) %>%
+   DT::formatStyle(columns = c(1:ncol(logs_Ncells)), fontSize = 8)
+```
+
+```{r Seurat_v2_step1, echo=FALSE, cache=FALSE}
+
+quiet(gc())
+setwd("../") #must set working directory. default is .Rmd-existing path.
+
+ #re-generate Seurat object for demultiplexed sample
+ raw.data = seu[[1]]@raw.data
+ tmp = paste(seu[[1]]@meta.data$TagIDs, rownames(seu[[1]]@meta.data), sep="_")
+ colnames(raw.data)=as.character(tmp)
+ colnames(raw.data)=gsub("not_detected", "not-detected", colnames(raw.data))
+ seu=NULL
+ seu = CreateSeuratObject(raw.data, min.cells=5, min.genes=200)
+ colnames(seu@meta.data)[2]="nReads"
+ file.name.Seurat=paste(dir.name, "/Seurat/", sample_name, "_Seurat.rda", sep='')
+ save.pigz(seu, file=file.name.Seurat, n.cores=threads*2)
+
+ #make cell name-cell barcode table for RNA velocity analysis
+fuga = unique(seu@meta.data$orig.ident)
+fuga1 = paste(fuga, "_", sample_name, "_", sep="")
+
+hoge1 = rownames(seu@meta.data)
+for (i in c(1:length(fuga))){
+ hoge1 = gsub(fuga1[i], "", hoge1)
+}
+
+res = data.frame(Barcode=hoge1, Nreads_CellBC=rownames(seu@meta.data))
+hoge2 = paste(dir.name.matrix, sample_name, ".csv", sep="")
+write.table(res, hoge2, row.names=F, col.names=T, sep=",", quote=F, append=F)
+
+```
+
+File location   
+
+Entire Seurat object file was stored at `r paste(file.name.Seurat, sep="")`.
+
