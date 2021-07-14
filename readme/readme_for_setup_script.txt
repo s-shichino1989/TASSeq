@@ -4,4 +4,4 @@
 ##CAUTION!! R environment is force to clean and re-install R. You should setup in clean Ubuntu.
 
 move on to the Rhapsody_analysis directory
-and type sudo sh setup.sh
+and type sh setup.sh
