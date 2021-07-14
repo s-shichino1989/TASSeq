@@ -27,7 +27,7 @@ sudo apt-get install -y libhts-dev
 sudo apt-get autoremove
 
 #clean up remained old R libraries
-R_version=`apt info r-base | grep "Version" | sed -e 's/.*\(3.6.3\).*/\1/g'`
+R_version=`apt list --installed | grep r-base/focal.focal.now | sed -e 's/.*\(3.6.3\).*/\1/g'`
 
 if [ $R_version = 3.6.3 ]; then
 echo "R 3.6.3 is already installed"
