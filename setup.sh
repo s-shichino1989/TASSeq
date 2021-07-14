@@ -7,7 +7,7 @@ sudo apt-get update -y
 sudo apt-get upgrade -y
 sudo apt-get install -y parallel
 sudo apt-get install -y wget
-sudo apt-get install -y curl
+sudo apt-get install -y curl pigz
 sudo apt-get install -y libncurses5-dev
 sudo apt-get install -y zlib1g-dev
 sudo apt-get install -y libbz2-dev
@@ -24,6 +24,7 @@ sudo apt-get install -y libgmp3-dev
 sudo apt-get install -y gdebi
 sudo apt-get install -y libgsl-dev default-jre
 sudo apt-get install -y libhts-dev
+sudo apt-get autoremove
 
 #clean up remained old R libraries
 R_version=`apt info r-base | grep "Version" | sed -e 's/.*\(3.6.3\).*/\1/g'`
@@ -130,7 +131,7 @@ python3 -m pip install --user --upgrade pip
 sudo python3 -m pip install cutadapt Cython wheel cmake
 python3 -m pip install argparse regex cutadapt \
 pysam==0.15.4 argparse Levenshtein numpy umap-learn \
-matplotlib pandas subprocess32 htseq==0.12.4 fitsne MulticoreTSNE
+matplotlib pandas subprocess32 htseq==0.12.4 fitsne
 
 python3 -m pip install ./Rhapsody_python/
 
