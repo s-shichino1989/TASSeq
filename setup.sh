@@ -128,7 +128,7 @@ fi
 #python3.7 or higher
 sudo python3 -m pip install --upgrade pip
 python3 -m pip install --user --upgrade pip
-sudo python3 -m pip install cutadapt Cython wheel cmake
+sudo python3 -m pip install Cython wheel cmake
 python3 -m pip install argparse regex cutadapt \
 pysam==0.15.4 argparse Levenshtein numpy umap-learn \
 matplotlib pandas subprocess32 htseq==0.12.4 fitsne
