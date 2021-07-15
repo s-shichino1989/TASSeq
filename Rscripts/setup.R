@@ -48,7 +48,3 @@ withr::with_libpaths(new="/usr/local/lib/R/site-library", install_github('barkas
 install.packages(c("rmdformats", "DT", "ggpubr"), lib="/usr/local/lib/R/site-library")
 withr::with_libpaths(new="/usr/local/lib/R/site-library", install_github("LTLA/celldex"))
 
-install_github("velocyto-team/velocyto.R")
-
-
-
