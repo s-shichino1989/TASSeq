@@ -40,7 +40,7 @@ bowtie2 -p 2 -D 50 -R 20 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder -x
 
 elif [ $adapter = "sampletag" ]; then
 bowtie2 -p 2 -D 20 -R 3 -N 0 -L 14 -i S,1,0.75 --norc --seed 656565 --reorder -x ${index} --trim-to 3:40\
- --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3 -U $1|samtools view -@ 2 -Sb - > ${file1}_mapping_R2.BAM
+ --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3 -U $1|samtools view -@ 2 -Shb - > ${file1}_mapping_R2.BAM
  sleep 1
   
  samtools flagstat -@2 ${file1}_mapping_R2.BAM| sed '2,4d' - | sed '3,10d' | sed -e 's/ .*//g' > ${file1}_samtools.log
@@ -48,8 +48,17 @@ bowtie2 -p 2 -D 20 -R 3 -N 0 -L 14 -i S,1,0.75 --norc --seed 656565 --reorder -x
  rm $1
 
 elif [ $adapter = "Streptavidin" ]; then
-bowtie2 -p 2 -D 20 -R 3 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder -x ${index} --trim-to 3:39\
- --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3 -U $1|samtools view -@ 2 -Sb - > ${file1}_mapping_R2.BAM
+bowtie2 -p 2 -D 50 -R 20 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder -x ${index} --trim-to 3:21\
+ --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3 -U $1|samtools view -@ 2 -Shb - > ${file1}_mapping_R2.BAM
+ sleep 1
+  
+ samtools flagstat -@2 ${file1}_mapping_R2.BAM | sed '2,4d' - | sed '3,10d' | sed -e 's/ .*//g' > ${file1}_samtools.log
+ sleep 1
+ rm $1
+ 
+ elif [ $adapter = "Abseq" ]; then
+bowtie2 -p 2 -D 20 -R 3 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder -x ./index/Abseq --trim-to 3:39\
+ --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3 -U $1|samtools view -@ 2 -Shb - > ${file1}_mapping_R2.BAM
  sleep 1
   
  samtools flagstat -@2 ${file1}_mapping_R2.BAM | sed '2,4d' - | sed '3,10d' | sed -e 's/ .*//g' > ${file1}_samtools.log

@@ -42,6 +42,13 @@ cutadapt --cores=$threads -u -1 -U -1 -q 20 --trim-n --report=minimal -Z -n 3 \
 -o ${file1}_trim.fastq.gz -p ${file2}_trim.fastq.gz \
 ./data/${file1}.fastq.gz ./data/${file2}.fastq.gz 1> ${samplename}_cutadapt_summary.log
 
+#cutadapt --cores=$threads -u -84 -U -1 -q 20 --trim-n --report=minimal -Z -n 3 \
+#-G "XAAGCAGTGGTATCAACGCAGA;max_error_rate=0.1" -G "G{100};min_overlap=8;max_error_rate=0.2" \
+#-A "A{10};min_overlap=6;max_error_rate=0.2" -m 60:30 \
+#-o ${file1}_trim.fastq.gz -p ${file2}_trim.fastq.gz \
+#./data/${file1}.fastq.gz ./data/${file2}.fastq.gz 1> ${samplename}_cutadapt_summary.log
+
+
 
 rm ./data/${file1}.fastq.gz
 rm ./data/${file2}.fastq.gz
@@ -67,7 +74,7 @@ rm ./data/${file1}.fastq.gz
 rm ./data/${file2}.fastq.gz
 
 elif [ $adapter = "sampletag" ]; then
-cutadapt --cores=$threads -u -1 -U -70 -q 20 --trim-n -Z --report=minimal -G "XGTTGTCAAGATGCTACCGTTCAGAG;min_overlap=20" -m 60:40 \
+cutadapt --cores=$threads -u -1 -U -90 -q 20 --trim-n -Z --report=minimal -G "XGTTGTCAAGATGCTACCGTTCAGAG;min_overlap=20" -m 60:40 \
 -o ${file1}_trim.fastq.gz -p ${file2}_trim.fastq.gz \
 ./data/${file1}.fastq.gz ./data/${file2}.fastq.gz 1> ${samplename}_cutadapt_summary.log
 
@@ -81,13 +88,24 @@ rm ./data/${file2}.fastq.gz
 
 elif [ $adapter = "Streptavidin" ]; then
 
-cutadapt --cores=$threads -U -90 -q 20 --trim-n -Z --report=minimal -m 60:15 \
+cutadapt --cores=$threads -U -82 -q 20 --trim-n -Z --report=minimal -G "XTGGCACCCGAGAATTCCA;min_overlap=17" -m 60:15 \
 -o ${file1}_trim.fastq.gz -p ${file2}_trim.fastq.gz \
 ./data/${file1}.fastq.gz ./data/${file2}.fastq.gz 1> ${samplename}_cutadapt_summary.log
 
 sleep 1
 rm ./data/${file1}.fastq.gz
 rm ./data/${file2}.fastq.gz
+
+elif [ $adapter = "Abseq" ]; then
+
+cutadapt --cores=$threads -U 12 -U -58 -q 20 --trim-n -Z --report=minimal -m 60:40 \
+-o ${file1}_trim.fastq.gz -p ${file2}_trim.fastq.gz \
+./data/${file1}.fastq.gz ./data/${file2}.fastq.gz 1> ${samplename}_cutadapt_summary.log
+
+sleep 1
+rm ./data/${file1}.fastq.gz
+rm ./data/${file2}.fastq.gz
+
 
 else
  echo "require valid adapter, acceptable is BDWTA, LibA, targeted, hashtag or sampletag or Streptavidin"
