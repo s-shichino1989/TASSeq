@@ -1,7 +1,7 @@
 ---
 title: "Mapping report of BD Rhapsody TAS-Seq WTA data"
 date: "`r Sys.Date()`"
-author: "SS"
+author: "ImmunoGeneTeqs Inc."
 output:
   rmdformats::readthedown:
     highlight: kate
@@ -100,13 +100,12 @@ Base composition plot was stored at `r paste("./plots/", url1, sep="")` and `r p
 ## Brief summary of the mapping pipeline procedures
 
 Pair-end Fastq files (R1: cell barcode reads, R2: RNA reads) of sample `r paste(sample_name, sep="")` were processed as follows.  
-Adapter trimming of sequencing data was performed by using cutadapt 2.10.  
-Filtered reads were chunked to 16 parts for parallel processing by using Seqkit 0.9.0.  
-Filtered cell barcode reads were annotated by Python script provided by BD with minor modification for compatible to Python3.7.  
-Associated cDNA reads were mapped to reference RNA (build `r paste(reference,sep="")`) by using bowtie2-2.4.2 by the following parameters: -p 2 -D 20 -R 3 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder.  
+Adapter trimming of sequencing data was performed by using Cutadapt 3.4.  
+Filtered reads were chunked to 16 parts for parallel processing by using Seqkit 0.15.0.  
+Filtered cell barcode reads were annotated by Python script provided by BD with minor modification for compatible to Python3.8.  
+Associated cDNA reads were mapped to reference RNA (build `r paste(reference,sep="")`) by using bowtie2-2.4.2 by the following parameters: -p 2 --very-sensitive-local -N 1 --norc --seed 656565 --reorder.  
 Then, cell barcode information of each read were added to the bowtie2-mapped BAM files, and read counts of each gene in each cell barcode were counted by using mawk.  
-Resulted count data was converted to genes x cells matrix file and inflection threshold of the knee-plot was detected by using DropletUtils package in R 3.6.3.  
-In addition, we further estimate background beads by using emptyDrops formula in DropletUtils package.  
+Resulted count data was converted to genes x cells matrix file and inflection threshold of the knee-plot was detected by using DropletUtils package in `r paste(version$version.string, sep="")`.  
 
 ```{r analysis, echo=FALSE, cache=FALSE}
 
@@ -199,33 +198,33 @@ fwrite(as.data.frame(tmp), file.name_matrix, row.names=T, col.names=T, sep="\t",
 
 #estimate Background beads by DropletUtils Package
 #Background is picked up from under10000 cell barcodes in top50000 cell BCs
-set.seed(42)
-hoge1 = colSums(res4)
-hoge1 = hoge1[order(hoge1, decreasing=F)]
-res4 = as.matrix(res4)
-e.out = emptyDrops(res4, lower = max(hoge1[1:10000]), 
-                   retain = metadata(br.out)$inflection, 
-                   BPPARAM=MulticoreParam(24), 
-                   niters=50000)
+#set.seed(42)
+#hoge1 = colSums(res4)
+#hoge1 = hoge1[order(hoge1, decreasing=F)]
+#res4 = as.matrix(res4)
+#e.out = emptyDrops(res4, lower = max(hoge1[1:10000]), 
+#                   retain = metadata(br.out)$inflection, 
+#                   BPPARAM=BiocParallel::MulticoreParam(24), 
+#                   niters=50000)
 
-is.cell = e.out$FDR <= 0.001
-e.out = as.data.frame(e.out)
-e.out$LogProb[is.na(e.out$LogProb)]=0
-e.out$LogProb = -e.out$LogProb
-e.out$PValue[is.na(e.out$PValue)]=1
-e.out$FDR[is.na(e.out$FDR)]=1
-colnames(e.out)[1]="Nreads"
-hoge2 = e.out$FDR
-hoge3 = hoge2 <= 0.001
-hoge4 = hoge2 > 0.001
-hoge2[hoge3]="Cell"
-hoge2[hoge4]="Background"
-e.out$Label = hoge2
-res5 = res4[,rownames(e.out[e.out$Label=="Cell",])]
-file.name_matrix = sprintf("matrix_DropletUtils_%s.txt.gz", sample_name) 
-file.name_matrix = paste(dir.name, "/matrix/", file.name_matrix, sep="")
-fwrite(as.data.frame(res5), file.name_matrix, row.names=T, col.names=T, sep="\t", 
-       eol="\n", quote=F, nThread=32, compress="gzip")
+#is.cell = e.out$FDR <= 0.001
+#e.out = as.data.frame(e.out)
+#e.out$LogProb[is.na(e.out$LogProb)]=0
+#e.out$LogProb = -e.out$LogProb
+#e.out$PValue[is.na(e.out$PValue)]=1
+#e.out$FDR[is.na(e.out$FDR)]=1
+#colnames(e.out)[1]="Nreads"
+#hoge2 = e.out$FDR
+#hoge3 = hoge2 <= 0.001
+#hoge4 = hoge2 > 0.001
+#hoge2[hoge3]="Cell"
+#hoge2[hoge4]="Background"
+#e.out$Label = hoge2
+#res5 = res4[,rownames(e.out[e.out$Label=="Cell",])]
+#file.name_matrix = sprintf("matrix_DropletUtils_%s.txt.gz", sample_name) 
+#file.name_matrix = paste(dir.name, "/matrix/", file.name_matrix, sep="")
+#fwrite(as.data.frame(res5), file.name_matrix, row.names=T, col.names=T, sep="\t", 
+#       eol="\n", quote=F, nThread=32, compress="gzip")
 
 #export thresholds and survived cells
 threshold_log = cbind(tmp1, tmp2)
@@ -258,7 +257,7 @@ mapping_log3 = inflection_log[3,1]/inflection_log[4,1]*100
 
 logs = c(cutadapt_log1, mapping_log1, mapping_log2, 
          inflection_log[4,1], threshold_log2, threshold_log1, 
-         inflection_log1[1], mapping_log3, inflection_log1[2:3], inflection_log2, sum(is.cell, na.rm=TRUE))
+         inflection_log1[1], mapping_log3, inflection_log1[2:3], inflection_log2)
 logs = as.data.frame(logs)
 rownames(logs) = c("total reads", "trimmed reads", "mapped reads", 
                    "mapping rate against reference", 
@@ -270,10 +269,9 @@ rownames(logs) = c("total reads", "trimmed reads", "mapped reads",
                    "mean reads over inflection threshold", 
                    "median symbols over inflection threshold", 
                    "mean symbols over inflection threshold", 
-                   "total genes detected",
-                   "Survived cells by DropletUtils estimation")
+                   "total genes detected")
 colnames(logs) = sample_name
-logs=logs[c(1:8,10:17),,drop=F]
+logs=logs[c(1:8,10:16),,drop=F]
 logs[c(4,5, 10,12,14),1] = round(logs[c(4,5, 10,12,14),1], digits=2)
 logs[c(12,14),1] = round(logs[c(12,14),1], digits=0)
 file.name.logs = sprintf("stats_concat_%s.txt", sample_name) 
@@ -324,41 +322,6 @@ file.name = paste(dir.name, "/plots/", file.name, sep="")
 ggsave(file=file.name, plot=p_count_symbol, device="png", units="in",
        dpi=300, width=5.5, height=4, limitsize = FALSE)
 
-#Plot DropletUtils result
-p_EmptyDrops1 = ggplot(e.out) + geom_point(aes(x=Nreads, y = LogProb, color=Label), size=0.5) + 
-    geom_vline(aes(xintercept=metadata(br.out)$inflection, 
-                 linetype=paste(metadata(br.out)$inflection,"reads", sep=" ")), 
-             colour="magenta", size=0.75) +
-  scale_linetype_manual(name = "Inflection", values = c(1, 1), 
-                        guide = guide_legend(override.aes = list(color = c("magenta"))))+
-  scale_x_log10() +
-  scale_y_log10() +
-  scale_color_manual(values=c('Cell' = 'cyan', 'Background' = 'black'))+
-  ggtitle("Background Beads Estimation") +   labs(x = "Total reads", y = "-LogProbability") +
-  theme_linedraw() +
-  theme(plot.title=element_text(hjust = 0.5), text=element_text(size=8))
-file.name = sprintf("CountvsLogProb_%s.png", sample_name)
-file.name = paste(dir.name, "/plots/", file.name, sep="")
-ggsave(file=file.name, plot=p_EmptyDrops1, device="png", units="in",
-       dpi=300, width=5.5, height=4, limitsize = FALSE)
-
-p_EmptyDrops2 = ggplot(e.out) + geom_point(aes(x=Nreads, y = FDR, color=Label), size=0.5) + 
-  geom_vline(aes(xintercept=metadata(br.out)$inflection, 
-                 linetype=paste(metadata(br.out)$inflection,"reads", sep=" ")), 
-             colour="magenta", size=0.75) +
-  scale_linetype_manual(name = "Inflection", values = c(1, 1), 
-                        guide = guide_legend(override.aes = list(color = c("magenta"))))+
-  scale_x_log10() +
-  scale_y_log10() +
-  scale_color_manual(values=c('Cell' = 'cyan', 'Background' = 'black'))+
-  ggtitle("Background Beads Estimation") +   labs(x = "Total reads", y = "FDR") +
-  theme_linedraw() +
-  theme(plot.title=element_text(hjust = 0.5), text=element_text(size=8))
-file.name = sprintf("CountvsFDR_%s.png", sample_name)
-file.name = paste(dir.name, "/plots/", file.name, sep="")
-ggsave(file=file.name, plot=p_EmptyDrops2, device="png", units="in",
-       dpi=300, width=5.5, height=4, limitsize = FALSE)
-
 ```
 ---
 
@@ -382,7 +345,7 @@ Original data is stored at `r sprintf("/stats/stats_concat_%s.txt", sample_name)
 
 ### Knee-plot and read counts/gene symbols scatter plot
 
-Figure 2a. Knee-plot ((log10 read counts of each cell barcodes) x (rank of read counts of each cell barcodes)) and scatter plot (read count vs number of detected genes for each cell).
+Figure 2. Knee-plot ((log10 read counts of each cell barcodes) x (rank of read counts of each cell barcodes)) and scatter plot (read count vs number of detected genes for each cell).
 
 ---
 
@@ -392,22 +355,6 @@ plot_grid(p_knee, p_count_symbol)
 
 ```
 
----
-
-### Background beads estimation plot by DropletUtils package
-
-Figure 2b. Estimation of valid cells and background (noise) cells by DropletUtils package. FDR or -Log probabilities and read counts of each cells were plotted. Please see below URL for detail explanations.
-- <https://bioconductor.org/packages/release/bioc/vignettes/DropletUtils/inst/doc/DropletUtils.html>
-
-
----
-
-```{r output_plots2, echo=FALSE, cache=FALSE, fig.width=6, fig.height=2.5, dpi=300, out.width = 750, out.height = 300}
-
-plot_grid(p_EmptyDrops2, p_EmptyDrops1+theme(legend.position = 'none'))
-
-
-```
 
 ---
 
@@ -416,7 +363,6 @@ Plot file locations
 
 * Knee-plot was stored at `r sprintf("./plots/counts_knee_inflection_%s.png", sample_name)`.
 * Scatter plot was stored at `r sprintf("./plots/CountvsSymbol_%s.png", sample_name)`.
-* DropletUtils plot was stored at `r sprintf("./plots/CountvsFDR_%s.png", sample_name)` and  `r sprintf("./plots/CountvsLogProb_%s.png", sample_name)`.
 
 ---
 
@@ -427,13 +373,12 @@ Raw sequence files (fastq.gz format)
 
 * Raw sequence fastq.gz files were stored at `r paste("./fastq/", sep="")` folder. "R1" means read 1 sequence, and "R2" means read 2 sequence.  
 
-Gene-expression matrix files (gzip comporessed)
+Gene-expression matrix files (gzip compressed)
 
 Rownames are gene symbols, and colnames are cell barcodes.
 
 * Genes x cells matrix (over inflection threshod) was stored at `r sprintf("./matrix/matrix_inflection_%s.txt.gz", sample_name)`.
 * Genes x cells matrix (top`r paste(ncol(res4), sep="")` cell barcodes) was stored at `r paste("./matrix/", file.name_top, sep="")`.
-* Genes x cells matrix (DropletUtils estimation) was stored at `r sprintf("./matrix/matrix_DropletUtils_%s.txt.gz", sample_name)`.
 
 Processed count data (gzip comporessed, tidy data-format)  
 
@@ -442,3 +387,12 @@ Processed count data (gzip comporessed, tidy data-format)
 * Third column: read counts  
     * processed count data was stored at `r sprintf("./processed/%s_final_count.txt.gz", sample_name)`.
 
+
+---
+
+## sessionInfo
+
+```{r sessioninfo, results.folding="hide", summary.results="SessionInfo"}  
+options(max.print = 999999)
+sessionInfo()
+```

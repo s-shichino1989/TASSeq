@@ -1,7 +1,7 @@
 ---
 title: "Mapping report of BD Rhapsody TAS-Seq Tag data"
 date: "`r Sys.Date()`"
-author: "SS"
+author: "ImmunoGeneTeqs Inc."
 output:
   rmdformats::readthedown:
     highlight: kate
@@ -66,6 +66,8 @@ if(params$adapter == "hashtag"){
   adapter = "sampletag reads were mapped to known barcode fasta by using bowtie2-2.4.2 by the following parameters: -p 2 -D 20 -R 3 -N 0 -L 14 -i S,1,0.75 --norc --seed 656565 --reorder --trim-to 3:40 --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3."
 } else if (params$adapter == "Streptavidin"){
   adapter = "streptavidin/anti-biotin hashtag reads were mapped to known barcode fasta by using bowtie2-2.4.2 by the following parameters: -p 2 -D 20 -R 3 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder -x ${index} --trim-to 3:39 --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3."  
+} else if (params$adapter == "Abseq"){
+  adapter = "Abseq/CITE-Seq reads were mapped to known barcode fasta by using bowtie2-2.4.2 by the following parameters: -p 2 -D 20 -R 3 -N 0 -L 8 -i S,1,0.75 --norc --seed 656565 --reorder -x ${index} --trim-to 3:39 --score-min L,-9,0 --mp 3,3 --np 3 --rdg 3,3."  
 }
 
 ```
@@ -98,12 +100,12 @@ Base composition plot was stored at `r paste("./plots/", url1, sep="")` and `r p
 ## Brief summary of the mapping pipeline procedures
 
 Pair-end Fastq files (R1: cell barcode reads, R2: RNA reads) of sample `r paste(sample_name, sep="")` were processed as follows.  
-Adapter trimming of sequencing data was performed by using cutadapt 2.10.  
-Filtered reads were chunked to 16 parts for parallel processing by using Seqkit 0.9.0.  
-Filtered cell barcode reads were annotated by Python script provided by BD with minor modification for compatible to Python3.7.  
+Adapter trimming of sequencing data was performed by using Cutadapt 3.4.  
+Filtered reads were chunked to 64 parts for parallel processing by using Seqkit 0.15.0.  
+Filtered cell barcode reads were annotated by Python script provided by BD with minor modification for compatible to Python3.8.  
 Associated `r paste(adapter, sep="")`  
 Then, cell barcode information of each read were added to the bowtie2-mapped BAM files, and read counts of each Tag in each cell barcode were counted by using mawk.  
-Resulted count data was converted to Tags x cells matrix file by using data.table package in R 3.6.3, and top 1M cell barcodes were extracted.
+Resulted count data was converted to Tags x cells matrix file by using data.table package in `r paste(version$version.string, sep="")`, and top 1M cell barcodes were extracted.
 
 ```{r analysis, echo=FALSE, cache=FALSE}
 
@@ -159,14 +161,14 @@ res3 = data1[barcode %chin% Cell_BCs]
 res4 = data.table::dcast(res3, Symbol ~ barcode, value.var = "counts", fill=0)
 res4 = as.data.frame(res4)
 tmp = res4[,1]
-res4 = res4[,2:ncol(res4)]
+res4 = res4[,2:ncol(res4), drop=F]
 rownames(res4)=tmp
 symbol_total_50000 = nrow(res4)
 quiet(gc())
 
 #detect inflection point/knee-threshold
 br.out = barcodeRanks(res4)
-tmp = res4[,colSums(res4)>=10000] 
+tmp = res4[,colSums(res4)>=10000, drop=F] 
 #print(paste("Survived cells : ", sample_name, "=", as.character(ncol(tmp))))
 #print(paste("count_threshold:", sample_name, "=", as.character(10000)))
 tmp1 = c(ncol(tmp), 10000)
@@ -176,7 +178,7 @@ tmp1 = c(ncol(tmp), 10000)
 #fwrite(as.data.frame(tmp), file.name, row.names=T, col.names=T, sep="\t", eol="\n", quote=F, nThread=32)
 
 #define threshold as inflection point of knee-plot
-tmp = res4[,colSums(res4)>=metadata(br.out)$inflection] 
+tmp = res4[,colSums(res4)>=metadata(br.out)$inflection, drop=F] 
 #print(paste("Survived cells : ", sample_name, "=", as.character(ncol(tmp))))
 #print(paste("inflection_threshold:", sample_name, "=", as.character(metadata(br.out)$inflection)))
 tmp2 = c(ncol(tmp), metadata(br.out)$inflection)
@@ -195,7 +197,7 @@ colnames(threshold_log)=c("count", "inflection")
 
 #concatenate and reshape mapping statistics
 res2=as.data.frame(res2)
-res3 = res2[res2[,2]>=metadata(br.out)$inflection,]
+res3 = res2[res2[,2]>=metadata(br.out)$inflection,,drop=F]
 read_stats = c(median(res3[,2]), mean(res3[,2]), sum(res3[,2]), sum(res2[,2]))
 symbol_stats =c(median(res3[,3]), mean(res3[,3]), symbol_total, symbol_total_50000)
 inflection_log = cbind(read_stats, symbol_stats)
@@ -276,7 +278,7 @@ res3 = data1[barcode %chin% Cell_BCs]
 res4 = data.table::dcast(res3, Symbol ~ barcode, value.var = "counts", fill=0)
 res4 = as.data.frame(res4)
 tmp = res4[,1]
-res4 = res4[,2:ncol(res4)]
+res4 = res4[,2:ncol(res4), drop=F]
 rownames(res4)=tmp
 symbol_total_50000 = nrow(res4)
 quiet(gc())
@@ -350,3 +352,12 @@ Processed count data (gzip comporessed, tidy data-format)
 * Third column: read counts  
     * processed count data was stored at `r sprintf("./processed/%s_final_count.txt.gz", sample_name)`.
 
+
+---
+
+## sessionInfo
+
+```{r sessioninfo, results.folding="hide", summary.results="SessionInfo"}  
+options(max.print = 999999)
+sessionInfo()
+```
